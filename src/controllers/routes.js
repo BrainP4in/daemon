@@ -38,6 +38,7 @@ const Status = require('./../helpers/status');
 const ConfigHelper = require('./../helpers/config');
 const ResponseHelper = require('./../helpers/responses');
 const BuilderController = require('./../controllers/builder');
+const ModController = require('./../controllers/mod');
 const DeleteController = require('./../controllers/delete');
 const Log = require('./../helpers/logger');
 const Package = require('./../../package');
@@ -529,6 +530,25 @@ class RouteController {
                 this.responses.generic204(err);
             });
         });
+    }
+
+    installMod(){
+        //this.auth.allowed('g:server:unsuspend', (allowedErr, isAllowed) => {
+        //    if (allowedErr || !isAllowed) return;
+
+        const Mod = new ModController(this.req.params, this.auth.server());
+        Mod.install( ()=>{
+            console.log("READY!");
+        });
+
+        //console.log(this.req.params);
+        this.res.send(202, { 'message': 'Mod is being built now, this might take some time if the docker image doesn\'t exist on the system yet.' });
+        /* this.auth.server().mod.installMod(err => {
+            this.responses.generic204(err);
+        }); */ 
+
+    
+        //});
     }
 
     downloadServerFile() {

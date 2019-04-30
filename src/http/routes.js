@@ -239,6 +239,11 @@ RestServer.post('/v1/server/unsuspend', (req, res, next) => {
     return next();
 });
 
+RestServer.post('/v1/server/mods/install', (req, res, next) => {
+    Routes.installMod();
+    return next();
+});
+
 RestServer.listen(Config.get('web.listen', 8080), Config.get('web.host', '0.0.0.0'), () => {
     Log.info(Util.format(
         'Pterodactyl Daemon is now listening for %s connections on %s:%s',
