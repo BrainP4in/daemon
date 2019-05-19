@@ -532,23 +532,23 @@ class RouteController {
         });
     }
 
-    installMod(){
-        //this.auth.allowed('g:server:unsuspend', (allowedErr, isAllowed) => {
-        //    if (allowedErr || !isAllowed) return;
+    installMod() {
+        this.auth.allowed('g:server:unsuspend', (allowedErr, isAllowed) => {
+            if (allowedErr || !isAllowed) return;
 
         const Mod = new ModController(this.req.params, this.auth.server());
-        Mod.install( ()=>{
-            console.log("READY!");
+        Mod.install(() => {
+            console.log('READY!');
         });
 
-        //console.log(this.req.params);
+        // console.log(this.req.params);
         this.res.send(202, { 'message': 'Mod is being built now, this might take some time if the docker image doesn\'t exist on the system yet.' });
         /* this.auth.server().mod.installMod(err => {
             this.responses.generic204(err);
-        }); */ 
+        }); */
 
-    
-        //});
+
+        });
     }
 
     downloadServerFile() {

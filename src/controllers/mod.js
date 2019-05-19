@@ -43,30 +43,23 @@ const DockerController = new Dockerode({
 
 class Mod {
     constructor(data, server) {
-
-        //console.log(server)
+        // console.log(server)
         data = JSON.parse(data);
 
         server.log.warn = server.log.info;
         this.server = server;
-        this.log = {}
+        this.log = {};
         this.modInstall = data.mod;
+        this.modVariables = data.variables;
         this.processLogger = undefined;
+
+        console.log(data);
+
     }
 
     pull(next) {
         this.server.log.debug('Contacting panel to determine scripts to run for mod processes.');
-
-        try {
-            this.modInstall.mod.install_script = this.modInstall.mod.install_script.replace(/{steamModId}/gi, this.modInstall.steam_id)
-            this.modInstall.mod.install_script = this.modInstall.mod.install_script.replace(/{steamModName}/gi, this.modInstall.steam_name)
-            this.modInstall.mod.install_script = this.modInstall.mod.install_script.replace(/{steamModNameLow}/gi, this.modInstall.steam_name.replace(' ', ''))    
-        } catch (error) {
-            this.server.log.debug('Cant generate variables in script.');
-        }
-
         return next(null, this.modInstall);
-
     }
 
     install(next) {
@@ -79,21 +72,26 @@ class Mod {
                 this.pull(callback);
             },
             write_file: ['details', (results, callback) => {
-                if (_.isNil(_.get(results.details, 'mod.install_script', null))) {
+
+                console.log()
+                
+                if (_.isNil(_.get(this.modInstall, 'install_script', null))) {
                     // No script defined, skip the rest.
                     const error = new Error('No installation script was defined for this egg, skipping rest of process.');
                     error.code = 'E_NOSCRIPT';
                     return callback(error);
                 }
+                // Remove \r 
+                this.modInstall.install_script = this.modInstall.install_script.replace(/\r\n/g, '\n');
 
                 this.server.log.debug('Writing temporary file to be handed into the Docker container.');
-                Fs.outputFile(Path.join('/tmp/pterodactyl/', this.server.json.uuid, '/install-mod'+ this.modInstall.mod.id+'.sh'), results.details.mod.install_script, {
+                Fs.outputFile(Path.join('/tmp/pterodactyl/', this.server.json.uuid, `/install-mod${this.modInstall.id}.sh`), this.modInstall.install_script, {
                     mode: 0o644,
                     encoding: 'utf8',
                 }, callback);
             }],
             image: ['write_file', (results, callback) => {
-                const PullImage = _.get(results.details, 'mod.install_script_container', 'alpine:3.4');
+                const PullImage = _.get(this.modInstall, 'install_script_container', 'alpine:3.4');
                 this.server.log.debug(`Pulling ${PullImage} image if it is not already on the system.`);
                 ImageHelper.pull(PullImage, callback);
             }],
@@ -106,7 +104,7 @@ class Mod {
                 return callback();
             }],
             setup_stream: ['close_stream', (results, callback) => {
-                const LoggingLocation = Path.join(this.server.path(), 'install'+ this.modInstall.steam_id +'.log');
+                const LoggingLocation = Path.join(this.server.path(), `install${this.modInstall.id}.log`);
                 this.server.log.info({ file: LoggingLocation }, 'Writing output of installation process to file.');
                 this.processLogger = createOutputStream(LoggingLocation, {
                     mode: 0o644,
@@ -114,10 +112,10 @@ class Mod {
                 });
                 return callback();
             }],
-            suspend: ['image', (results, callback) => {
-                //this.server.log.info('Temporarily suspending server to avoid mishaps...');
-                //this.server.suspend(callback);
-            }],
+            /* suspend: ['image', (results, callback) => {
+                // this.server.log.info('Temporarily suspending server to avoid mishaps...');
+                // this.server.suspend(callback);
+            }],*/
             run: ['setup_stream', 'image', (results, callback) => {
                 this.server.log.debug('Running privileged docker container to perform the installation process.');
 
@@ -125,11 +123,16 @@ class Mod {
                 environment.push(`SERVER_MEMORY=${this.server.json.build.memory}`);
                 environment.push(`SERVER_IP=${this.server.json.build.default.ip}`);
                 environment.push(`SERVER_PORT=${this.server.json.build.default.port}`);
-                _.forEach(_.get(results.details, 'env', []), (value, key) => {
-                    environment.push(`${key}=${value}`);
-                });
 
-                DockerController.run(_.get(results.details, 'mod.install_script_container', 'alpine:3.4'), [_.get(results.details, 'mod.install_script_entry', 'ash'), '/mnt/install/install-mod'+ this.modInstall.mod.id + '.sh'], (Config.get('logger.level', 'info') === 'debug') ? process.stdout : this.processLogger, {
+
+                console.log(1)
+                _.forEach(this.modVariables, variable => {
+                    console.log(`PUSH : ${variable.key}=${variable.value}`)
+                    environment.push(`${variable.key}=${variable.value}`);
+                });
+                console.log(0)
+
+                DockerController.run(_.get(this.modInstall, 'install_script_container', 'alpine:3.4'), [_.get(this.modInstall, 'install_script_entry', 'ash'), `/mnt/install/install-mod${this.modInstall.id}.sh`], (Config.get('logger.level', 'info') === 'debug') ? process.stdout : this.processLogger, {
                     Tty: true,
                     AttachStdin: true,
                     AttachStdout: true,
@@ -140,7 +143,7 @@ class Mod {
                             Source: this.server.path(),
                             Destination: '/mnt/server',
                             RW: true,
-                        },                                                                  
+                        },
                         {
                             Source: Path.join('/tmp/pterodactyl/', this.server.json.uuid),
                             Destination: '/mnt/install',
@@ -148,7 +151,7 @@ class Mod {
                         },
                     ],
                     HostConfig: {
-                        Privileged: true,   // _.get(results.details, 'scripts.privileged', false), DANGER DISABLED"!!!!!
+                        Privileged: true, // _.get(results.details, 'scripts.privileged', false), DANGER DISABLED"!!!!!
                         Binds: [
                             Util.format('%s:/mnt/server', this.server.path()),
                             Util.format('%s:/mnt/install', Path.join('/tmp/pterodactyl/', this.server.json.uuid)),
@@ -180,14 +183,14 @@ class Mod {
                 return callback();
             }],
             remove_install_script: ['run', (results, callback) => {
-                Fs.unlink(Path.join('/tmp/pterodactyl/', this.server.json.uuid, '/install-mod'+ this.modInstall.mod_id +'.sh'), callback);
+                Fs.unlink(Path.join('/tmp/pterodactyl/', this.server.json.uuid, `/install-mod${this.modInstall.id}.sh`), callback);
             }],
             chown: ['run', (results, callback) => {
                 this.server.log.debug('Properly chowning all server files and folders after installation.');
                 this.server.fs.chown('/', callback);
             }],
         }, err => {
-            //this.server.unsuspend(() => { _.noop(); });
+            // this.server.unsuspend(() => { _.noop(); });
 
             // No script, no need to kill everything.
             if (err && err.code === 'E_NOSCRIPT') {
